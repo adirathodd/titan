@@ -1,0 +1,36 @@
+{% extends 'trading/layout.html' %}
+
+{% block body %}
+
+<table class="table table-striped">
+    <thead>
+      <tr>
+        <th scope="col">Stock</th>
+        <th scope="col">Share(s)</th>
+        <th scope="col">Value</th>
+        <th scope="col">Time</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <th>Cash</th>
+            <td></td>
+            <td>{{ request.user.balance|floatformat:2 }}</td>
+            <td></td>
+        </tr>
+        {% for share in shares reversed %}
+        <tr>
+            <th>{{ share.stock }}</th>
+            <td>{{ share.shares }}</td>
+            <td>{{ share.currentValue|floatformat:2 }}</td>
+            <td>{{ share.updated_at }}</td>
+        </tr>
+        {% endfor %}
+        <tr>
+            <th>Total Account Value</th>
+            <td></td>
+            <td>{{ total|floatformat:2 }}</td>
+            <td></td>
+        </tr>
+  </table>
+{% endblock %}
