@@ -4,12 +4,28 @@ from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
 from .models import User, Transaction
+from django.contrib.sites.shortcuts import get_current_site
 from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from django.template.loader import render_to_string
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str, DjangoUnicodeDecodeError
 import yfinance as yf
 import plotly.graph_objects as go
 from requests.exceptions import HTTPError
+from .utils import generate_token
+from django.core.mail import EmailMessage
+from django.conf import settings
+import threading
+
+class EmailThread(threading.Thread):
+    def __init__(self, email):
+        self.email = email
+        threading.Thread.__init__(self)
+
+    def run(self):
+        self.email.send()
 
 def dashboard(request):
     if request.user.is_authenticated:
@@ -35,16 +51,30 @@ def login_view(request):
         # Attempt to sign user in
         username = request.POST["username"]
         password = request.POST["password"]
-        user = authenticate(request, username=username, password=password)
-
-        # Check if authentication successful
-        if user is not None:
-            login(request, user)
-            return HttpResponseRedirect(reverse("dashboard"))
-        else:
-            return render(request, "trading/login.html", {
-                "message": "Invalid username and/or password."
+        # First, check if the user exists with the given username
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return render(request, 'trading/login.html', {
+                "message": "Username does not exist."
             })
+        
+        # Check if the user is authenticated
+        user = authenticate(request, username=username, password=password)
+        if user is None:
+            return render(request, 'trading/login.html', {
+                'message': "Invalid password."
+            })
+        
+        # Check if the email is verified
+        if not user.emailVerified:
+            return render(request, 'trading/login.html', {
+                "message": "Email not verified. Please check your email for the verification link."
+            })
+
+        # Log the user in if all checks pass
+        login(request, user)
+        return HttpResponseRedirect(reverse("dashboard"))
     else:
         return render(request, "trading/login.html")
 
@@ -52,6 +82,24 @@ def login_view(request):
 def logout_view(request):
     logout(request)
     return HttpResponseRedirect(reverse("dashboard"))
+
+def verifyEmail(request, user):
+    currSite = get_current_site(request)
+    emailSubject = "Titan - Verification email"
+    emailBody = render_to_string('trading/activate.html', {
+        'user': user,
+        'domain': currSite,
+        'uid': urlsafe_base64_encode(force_bytes(user.id)),
+        'token': generate_token.make_token(user)
+    })
+
+    email = EmailMessage(subject=emailSubject, body=emailBody,
+                         from_email=settings.EMAIL_FROM_USER,
+                         to=[user.email]
+                         )
+
+    EmailThread(email).start()
+
 
 
 def register(request):
@@ -92,11 +140,17 @@ def register(request):
             return render(request, "trading/register.html", {
                 "message": "Username already taken."
             })
+        
+        
         login(request, user)
-        return HttpResponseRedirect(reverse("dashboard"))
+        verifyEmail(request, user)
+        return render(request, "trading/login.html", {
+            "message": "Check your email for verification link."
+        })
     else:
         return render(request, "trading/register.html")
     
+
 def search(request):
     ticker = request.POST['ticker']
     currentShares = 0
@@ -248,3 +302,23 @@ def sell(request):
         currentUser.balance = balance + (shares * price)
         currentUser.save()
         return HttpResponseRedirect('.')
+
+def activateUser(request, uidb64, token):
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk = uid)
+
+    except Exception as e:
+        user = None
+
+    if user and generate_token.check_token(user, token):
+        user.emailVerified = True
+        user.save()
+
+        return render(request, "trading/dashboard.html", {
+                    "message2": "Email Verified Successfully!"
+                })
+    
+    return render(request, "trading/login.html", {
+        "message": "Email verification failed."
+    })
