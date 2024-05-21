@@ -1,7 +1,7 @@
 from django.contrib.auth import authenticate, login, logout
 from django.db import IntegrityError
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.urls import reverse
 from .models import User, Transaction
 from django.contrib.sites.shortcuts import get_current_site
@@ -18,6 +18,8 @@ from .utils import generate_token
 from django.core.mail import EmailMessage
 from django.conf import settings
 import threading
+from django.contrib import messages
+
 
 class EmailThread(threading.Thread):
     def __init__(self, email):
@@ -28,7 +30,7 @@ class EmailThread(threading.Thread):
         self.email.send()
 
 def dashboard(request):
-    if request.user.is_authenticated:
+    if request.user.is_authenticated and request.user.emailVerified:
         allShares = Transaction.objects.filter(user = request.user)
         total = User.objects.get(pk = request.user.id).balance
         for share in allShares:
@@ -58,14 +60,14 @@ def login_view(request):
             return render(request, 'trading/login.html', {
                 "message": "Username does not exist."
             })
-        
+
         # Check if the user is authenticated
         user = authenticate(request, username=username, password=password)
         if user is None:
             return render(request, 'trading/login.html', {
                 'message': "Invalid password."
             })
-        
+
         # Check if the email is verified
         if not user.emailVerified:
             return render(request, 'trading/login.html', {
@@ -84,7 +86,7 @@ def logout_view(request):
     return HttpResponseRedirect(reverse("dashboard"))
 
 def verifyEmail(request, user):
-    currSite = get_current_site(request)
+    currSite = request.get_host()
     emailSubject = "Titan - Verification email"
     emailBody = render_to_string('trading/activate.html', {
         'user': user,
@@ -132,6 +134,9 @@ def register(request):
             validate_email(email)
             user = User.objects.create_user(username, email, password)
             user.save()
+            verifyEmail(request, user)
+            messages.success(request, "Check your email for the verification link.")
+            return HttpResponseRedirect('.')
         except ValidationError as e:
             return render(request, "trading/register.html", {
                 "message": "Email invalid."
@@ -140,16 +145,12 @@ def register(request):
             return render(request, "trading/register.html", {
                 "message": "Username already taken."
             })
-        
-        
-        login(request, user)
-        verifyEmail(request, user)
-        return render(request, "trading/login.html", {
-            "message": "Check your email for verification link."
-        })
+
+
+
     else:
         return render(request, "trading/register.html")
-    
+
 
 def search(request):
     ticker = request.POST['ticker']
@@ -220,7 +221,7 @@ def search(request):
                 "message": "Invalid ticker"
             })
 
-    
+
 def buy(request):
     if request.method == "POST":
         #Get information
@@ -276,12 +277,12 @@ def buy(request):
             newTransaction.save()
             newTransaction.currentValue = newTransaction.shares * price
             newTransaction.save()
-        
+
         #Update balance and return dashboard
         currentUser.balance = balance - (shares * price)
         currentUser.save()
         return HttpResponseRedirect('.')
-    
+
 def sell(request):
     if request.method == "POST":
         shares = int(request.POST['shares'])
@@ -314,11 +315,11 @@ def activateUser(request, uidb64, token):
     if user and generate_token.check_token(user, token):
         user.emailVerified = True
         user.save()
-
+        login(request, user)
         return render(request, "trading/dashboard.html", {
                     "message2": "Email Verified Successfully!"
                 })
-    
+
     return render(request, "trading/login.html", {
         "message": "Email verification failed."
     })
