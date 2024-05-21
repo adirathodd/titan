@@ -151,75 +151,66 @@ def register(request):
     else:
         return render(request, "trading/register.html")
 
+def is_valid_ticker(ticker):
+    stock = yf.Ticker(ticker)
+    info = stock.info
+    essential_keys = ['currentPrice', 'shortName']
+    if not info or any(key not in info for key in essential_keys):
+        return False
+    return True
+
+def get_stock_history(stock, period):
+    history = stock.history(period=period)
+    if history.empty:
+        raise ValueError(f"No {period} historical data found for the ticker")
+    return history
 
 def search(request):
-    ticker = request.POST['ticker']
+    ticker = request.POST['ticker'].upper()
     currentShares = 0
+
     if request.user.is_authenticated:
-        if Transaction.objects.filter(user = request.user, stock = ticker.upper()).exists():
-            oldBuy = Transaction.objects.get(user = request.user, stock = ticker.upper())
-            currentShares = currentShares + oldBuy.shares
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            oneYr = stock.history(period = "1y")
-            fig1 = go.Figure(data = go.Scatter(x = oneYr.index,  y = oneYr['Close']))
-            graph1 = fig1.to_html(full_html=False, default_width = '620px')
+        if Transaction.objects.filter(user=request.user, stock=ticker).exists():
+            oldBuy = Transaction.objects.get(user=request.user, stock=ticker)
+            currentShares = oldBuy.shares
 
-            #6 months
-            six = stock.history(period = "6mo")
-            fig2 = go.Figure(data = go.Scatter(x = six.index,  y = six['Close']))
-            graph2 = fig2.to_html(full_html=False, default_width = '620px')
+    try:
+        if not is_valid_ticker(ticker):
+            raise ValueError("Invalid ticker symbol")
 
-            #1 month
-            one = stock.history(period = "1mo")
-            fig3 = go.Figure(data = go.Scatter(x = one.index,  y = one['Close']))
-            graph3 = fig3.to_html(full_html=False, default_width = '620px')
+        stock = yf.Ticker(ticker)
+        info = stock.info
 
-            #test
+        # 1 year history
+        oneYr = get_stock_history(stock, "1y")
+        fig1 = go.Figure(data=go.Scatter(x=oneYr.index, y=oneYr['Close']))
+        graph1 = fig1.to_html(full_html=False, default_width='620px')
 
-            return render(request, "trading/search.html", {
-                "info": info,
-                "oneYr": graph1,
-                "sixMo": graph2,
-                "oneMo": graph3,
-                "currentShares": currentShares
-            })
-        except HTTPError:
-            return render(request, "trading/dashboard.html", {
-                "message": "Invalid ticker"
-            })
-    else:
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            oneYr = stock.history(period = "1y")
-            fig1 = go.Figure(data = go.Scatter(x = oneYr.index,  y = oneYr['Close']))
-            graph1 = fig1.to_html(full_html=False, default_width = '620px')
+        # 6 months history
+        sixMo = get_stock_history(stock, "6mo")
+        fig2 = go.Figure(data=go.Scatter(x=sixMo.index, y=sixMo['Close']))
+        graph2 = fig2.to_html(full_html=False, default_width='620px')
 
-            #6 months
-            six = stock.history(period = "6mo")
-            fig2 = go.Figure(data = go.Scatter(x = six.index,  y = six['Close']))
-            graph2 = fig2.to_html(full_html=False, default_width = '620px')
+        # 1 month history
+        oneMo = get_stock_history(stock, "1mo")
+        fig3 = go.Figure(data=go.Scatter(x=oneMo.index, y=oneMo['Close']))
+        graph3 = fig3.to_html(full_html=False, default_width='620px')
 
-            #1 month
-            one = stock.history(period = "1mo")
-            fig3 = go.Figure(data = go.Scatter(x = one.index,  y = one['Close']))
-            graph3 = fig3.to_html(full_html=False, default_width = '620px')
-
-            #test
-
-            return render(request, "trading/search.html", {
-                "info": info,
-                "oneYr": graph1,
-                "sixMo": graph2,
-                "oneMo": graph3,
-                "currentShares": currentShares
-            })
-        except HTTPError:
-            return render(request, "trading/dashboard.html", {
-                "message": "Invalid ticker"
-            })
+        return render(request, "trading/search.html", {
+            "info": info,
+            "oneYr": graph1,
+            "sixMo": graph2,
+            "oneMo": graph3,
+            "currentShares": currentShares
+        })
+    except ValueError as ve:
+        return render(request, "trading/dashboard.html", {
+            "message": str(ve)
+        })
+    except Exception as e:
+        return render(request, "trading/dashboard.html", {
+            "message": "An error occurred while fetching data. Please try again later."
+        })
 
 
 def buy(request):
