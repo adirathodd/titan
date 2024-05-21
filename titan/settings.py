@@ -12,6 +12,12 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 import os
+import psycopg2
+import environ
+
+# Initialise environment variables
+env = environ.Env()
+environ.Env.read_env()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,7 +33,7 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-_5qny@@4!all$r_#sk$m8^c1=(6lnzyzwk6rinsyb26#vt)nhl'
+SECRET_KEY = env('SECRET_KEY')
 EMAIL_FROM_USER = 'titanpapertrading@gmail.com'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -88,8 +94,15 @@ WSGI_APPLICATION = 'titan.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'defaultdb',
+        'USER': 'avnadmin',
+        'PASSWORD': env('DB_PASSWORD'),
+        'HOST': 'titan-adirathodd.k.aivencloud.com',
+        'PORT': '11998',
+        'OPTIONS': {
+            'sslmode': 'require',
+        }
     }
 }
 
@@ -144,4 +157,4 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_USE_TLS = True
 EMAIL_PORT = 587
 EMAIL_HOST_USER = 'titanpapertrading@gmail.com'
-EMAIL_HOST_PASSWORD = 'upgnwludzoobquau'
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
